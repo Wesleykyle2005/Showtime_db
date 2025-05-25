@@ -1,0 +1,45 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# SQL Server Management Studio Solution File, Format Version 20.00
+VisualStudioVersion = 15.0.28307.421
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{4F2E2C19-372F-40D8-9FA7-9D2138C6997A}") = "Base de datos Showtime", "Base de datos Showtime.ssmssqlproj", "{EDBBC386-1FBB-437A-87B0-E710A0BC918A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "0. Configuration", "0. Configuration", "{FFE9F73C-AB5C-4C98-8E16-B4B230ACF496}"
+	ProjectSection(SolutionItems) = preProject
+		0. configDatabase.sql = 0. configDatabase.sql
+		1. Schemas.sql = 1. Schemas.sql
+		3. auditTables.sql = 3. auditTables.sql
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "1. Scripts", "1. Scripts", "{313B4A2E-6473-478F-B269-1006A6FED676}"
+	ProjectSection(SolutionItems) = preProject
+		2. Showtime.sql = 2. Showtime.sql
+		7. populateDatabase.sql = 7. populateDatabase.sql
+		deleteDatabase.sql = deleteDatabase.sql
+		getInfoPerSchema.sql = getInfoPerSchema.sql
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2. Programability", "2. Programability", "{F1E3E872-FC91-44DE-B21D-5F9DB24BE7E8}"
+	ProjectSection(SolutionItems) = preProject
+		4. showtimeSp.sql = 4. showtimeSp.sql
+		5. scripts.sql = 5. scripts.sql
+		6. Auth.sql = 6. Auth.sql
+		testProcedures.sql = testProcedures.sql
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Default|Default = Default|Default
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EDBBC386-1FBB-437A-87B0-E710A0BC918A}.Default|Default.ActiveCfg = Default
+		{A210AB35-9431-4474-B348-6E2B9F74DDD1}.Default|Default.ActiveCfg = Default
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {EB9088C3-2D2C-4F7F-88CB-D9385EA17CEF}
+	EndGlobalSection
+EndGlobal
