@@ -1,5 +1,5 @@
-USE ShowtimeDB;
-GO
+--USE ShowtimeDB;
+--GO
 CREATE OR ALTER PROCEDURE Operaciones.AddCliente
 (
     @Nombre VARCHAR(100),
@@ -17,15 +17,15 @@ BEGIN
         IF @Apellido IS NULL OR LTRIM(RTRIM(@Apellido)) = ''
             THROW 50002, 'El apellido del cliente es requerido.', 1;
         IF @Telefono IS NULL OR LTRIM(RTRIM(@Telefono)) = ''
-            THROW 50003, 'El teléfono del cliente es requerido.', 1;
+            THROW 50003, 'El telï¿½fono del cliente es requerido.', 1;
         IF @Correo_electronico IS NOT NULL AND EXISTS (SELECT 1 FROM Operaciones.Clientes WHERE Correo_electronico = @Correo_electronico)
-            THROW 50004, 'El correo electrónico ya está registrado.', 1;
+            THROW 50004, 'El correo electrï¿½nico ya estï¿½ registrado.', 1;
         IF EXISTS (SELECT 1 FROM Operaciones.Clientes WHERE Telefono = @Telefono)
-            THROW 50005, 'El teléfono ya está registrado.', 1;
+            THROW 50005, 'El telï¿½fono ya estï¿½ registrado.', 1;
 
 		IF @Correo_electronico IS NOT NULL AND 
            @Correo_electronico NOT LIKE '_%@_%._%'
-            THROW 50006, 'El formato del correo electrónico no es válido.', 1;
+            THROW 50006, 'El formato del correo electrï¿½nico no es vï¿½lido.', 1;
 
 
         -- Insert client
@@ -60,9 +60,9 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50006, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50006, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50007, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50007, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
 
         -- Retrieve paginated clients
         SELECT 
@@ -159,9 +159,9 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50011, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50011, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50012, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50012, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
 
         -- Retrieve paginated packages
         SELECT 
@@ -223,15 +223,15 @@ BEGIN
         IF @Fecha_inicio <= @Fecha_reserva OR @Hora_fin <= @Hora_inicio
             THROW 50017, 'La fecha de inicio debe ser posterior a la reserva y la hora de fin posterior a la de inicio.', 1;
         IF @Ubicacion IS NULL OR LTRIM(RTRIM(@Ubicacion)) = ''
-            THROW 50018, 'La ubicación es requerida.', 1;
+            THROW 50018, 'La ubicaciï¿½n es requerida.', 1;
         IF @Direccion IS NULL OR LTRIM(RTRIM(@Direccion)) = ''
-            THROW 50019, 'La dirección es requerida.', 1;
+            THROW 50019, 'La direcciï¿½n es requerida.', 1;
         IF @Cantidad_de_asistentes <= 0
             THROW 50020, 'La cantidad de asistentes debe ser mayor a 0.', 1;
         IF @Costo_total <= 0
             THROW 50021, 'El costo total debe ser mayor a 0.', 1;
         IF @Estado NOT IN ('Pendiente', 'Reservado', 'Finalizado', 'Cancelado', 'Incompleto')
-            THROW 50022, 'Estado inválido.', 1;
+            THROW 50022, 'Estado invï¿½lido.', 1;
 
         -- Insert event
         INSERT INTO Operaciones.Eventos (
@@ -284,15 +284,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-        -- Validate pagination parameters
+        -- Validar paginaciÃ³n y estado
         IF @PageNumber < 1
-            THROW 50023, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50023, 'El nÃºmero de pÃ¡gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50024, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50024, 'El tamaÃ±o de pÃ¡gina debe ser mayor o igual a 1.', 1;
         IF @Estado IS NOT NULL AND @Estado NOT IN ('Pendiente', 'Reservado', 'Finalizado', 'Cancelado', 'Incompleto')
-            THROW 50025, 'Estado inválido.', 1;
+            THROW 50025, 'Estado invÃ¡lido.', 1;
 
-        -- Retrieve paginated events
+        -- Traer eventos con servicios asociados como JSON
         SELECT 
             e.Id_evento,
             e.Id_paquete,
@@ -308,19 +308,31 @@ BEGIN
             e.Cantidad_de_asistentes,
             e.Detalles_adicionales,
             e.Costo_total,
-            e.Estado
+            e.Estado,
+            -- Subconsulta para traer los servicios asociados como JSON
+            (
+                SELECT 
+                    s.Id_servicio,
+                    s.Nombre_servicio
+                FROM Operaciones.Evento_Servicios es
+                INNER JOIN Operaciones.Servicios s ON es.Id_servicio = s.Id_servicio
+                WHERE es.Id_evento = e.Id_evento
+                FOR JSON PATH
+            ) AS ServiciosJson
         FROM Operaciones.Eventos e
         JOIN Operaciones.Clientes c ON e.Id_cliente = c.Id_cliente
         WHERE (@TextFilter IS NULL OR 
                c.Nombre LIKE '%' + @TextFilter + '%' OR 
                c.Apellido LIKE '%' + @TextFilter + '%' OR 
                e.Ubicacion LIKE '%' + @TextFilter + '%')
-        AND (@Estado IS NULL OR e.Estado = @Estado)
+          AND (@Estado IS NULL OR e.Estado = @Estado)
         ORDER BY e.Fecha_reserva DESC
         OFFSET (@PageNumber - 1) * @PageSize ROWS
         FETCH NEXT @PageSize ROWS ONLY;
     END TRY
     BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
         DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
         DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
         DECLARE @ErrorState INT = ERROR_STATE();
@@ -395,9 +407,9 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50028, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50028, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50029, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50029, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
 
         -- Retrieve paginated services
         SELECT 
@@ -447,7 +459,7 @@ BEGIN
         IF @Fecha_pago IS NULL
             THROW 50032, 'La fecha de pago es requerida.', 1;
         IF @Metodo_pago IS NULL OR LTRIM(RTRIM(@Metodo_pago)) = ''
-            THROW 50033, 'El método de pago es requerido.', 1;
+            THROW 50033, 'El mï¿½todo de pago es requerido.', 1;
 
         -- Validate payment against event cost
         DECLARE @Costo_total DECIMAL(18, 2);
@@ -505,9 +517,9 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50034, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50034, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50035, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50035, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @Id_evento IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Operaciones.Eventos WHERE Id_evento = @Id_evento)
             THROW 50036, 'El evento especificado no existe.', 1;
 
@@ -550,7 +562,7 @@ CREATE OR ALTER PROCEDURE Administracion.AddEmpleado
     @Email VARCHAR(100),
     @Estado_Empleado INT,
     @Nombre_usuario VARCHAR(50),
-    @Contraseña NVARCHAR(100),
+    @Contraseï¿½a NVARCHAR(100),
     @Id_Cargo INT
 )
 AS
@@ -565,21 +577,21 @@ BEGIN
         IF @Apellido IS NULL OR LTRIM(RTRIM(@Apellido)) = ''
             THROW 50038, 'El apellido del empleado es requerido.', 1;
         IF @Telefono IS NULL OR LTRIM(RTRIM(@Telefono)) = ''
-            THROW 50039, 'El teléfono del empleado es requerido.', 1;
+            THROW 50039, 'El telï¿½fono del empleado es requerido.', 1;
         IF @Email IS NULL OR LTRIM(RTRIM(@Email)) = ''
             THROW 50040, 'El email del empleado es requerido.', 1;
         IF EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Email = @Email)
-            THROW 50041, 'El email ya está registrado.', 1;
+            THROW 50041, 'El email ya estï¿½ registrado.', 1;
         IF EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Telefono = @Telefono)
-            THROW 50042, 'El teléfono ya está registrado.', 1;
+            THROW 50042, 'El telï¿½fono ya estï¿½ registrado.', 1;
         IF NOT EXISTS (SELECT 1 FROM Administracion.Estado_Empleado WHERE Id_estado = @Estado_Empleado)
             THROW 50043, 'El estado del empleado no existe.', 1;
         IF @Nombre_usuario IS NULL OR LTRIM(RTRIM(@Nombre_usuario)) = ''
             THROW 50044, 'El nombre de usuario es requerido.', 1;
         IF EXISTS (SELECT 1 FROM Administracion.Usuarios WHERE Nombre_usuario = @Nombre_usuario)
-            THROW 50045, 'El nombre de usuario ya está registrado.', 1;
-        IF @Contraseña IS NULL OR LTRIM(RTRIM(@Contraseña)) = ''
-            THROW 50046, 'La contraseña es requerida.', 1;
+            THROW 50045, 'El nombre de usuario ya estï¿½ registrado.', 1;
+        IF @Contraseï¿½a IS NULL OR LTRIM(RTRIM(@Contraseï¿½a)) = ''
+            THROW 50046, 'La contraseï¿½a es requerida.', 1;
         IF NOT EXISTS (SELECT 1 FROM Administracion.Cargos WHERE Id_cargo = @Id_Cargo)
             THROW 50047, 'El cargo especificado no existe.', 1;
 
@@ -591,10 +603,10 @@ BEGIN
 
         -- Generate hashed password
         DECLARE @UniqueHash NVARCHAR(36) = NEWID();
-        DECLARE @HashedPassword VARBINARY(32) = HASHBYTES('SHA2_256', @Contraseña + @UniqueHash);
+        DECLARE @HashedPassword VARBINARY(32) = HASHBYTES('SHA2_256', @Contraseï¿½a + @UniqueHash);
 
         -- Insert user
-        INSERT INTO Administracion.Usuarios (Id_empleado, Id_Cargo, Nombre_usuario, Contraseña, UniqueHash, Estado)
+        INSERT INTO Administracion.Usuarios (Id_empleado, Id_Cargo, Nombre_usuario, Contraseï¿½a, UniqueHash, Estado)
         VALUES (@Id_empleado, @Id_Cargo, @Nombre_usuario, @HashedPassword, @UniqueHash, 1);
 
         COMMIT TRANSACTION;
@@ -639,11 +651,11 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50048, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50048, 'El nÃºmero de pÃ¡gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50049, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50049, 'El tamaÃ±o de pÃ¡gina debe ser mayor o igual a 1.', 1;
 
-        -- Retrieve paginated employees
+        -- Retrieve paginated employees, JOIN con Usuarios y Cargos
         SELECT 
             e.Id_empleado,
             e.Nombre,
@@ -651,9 +663,14 @@ BEGIN
             e.Telefono,
             e.Email,
             e.Estado_Empleado,
-            es.Tipo_estado
+            es.Tipo_estado,
+            u.Nombre_usuario,
+            u.Id_Cargo,
+            c.Nombre_cargo
         FROM Administracion.Empleados e
         JOIN Administracion.Estado_Empleado es ON e.Estado_Empleado = es.Id_estado
+        LEFT JOIN Administracion.Usuarios u ON e.Id_empleado = u.Id_empleado
+        LEFT JOIN Administracion.Cargos c ON u.Id_Cargo = c.Id_cargo
         WHERE (@TextFilter IS NULL OR 
                e.Nombre LIKE '%' + @TextFilter + '%' OR 
                e.Apellido LIKE '%' + @TextFilter + '%')
@@ -678,7 +695,7 @@ GO
 CREATE OR ALTER PROCEDURE Administracion.AddCargo
 (
     @Nombre_cargo VARCHAR(100),
-    @Descripción VARCHAR(MAX) = NULL
+    @Descripciï¿½n VARCHAR(MAX) = NULL
 )
 AS
 BEGIN
@@ -689,10 +706,10 @@ BEGIN
             THROW 50050, 'El nombre del cargo es requerido.', 1;
 
         -- Insert cargo
-        INSERT INTO Administracion.Cargos (Nombre_cargo, Descripción)
-        VALUES (@Nombre_cargo, @Descripción);
+        INSERT INTO Administracion.Cargos (Nombre_cargo, Descripciï¿½n)
+        VALUES (@Nombre_cargo, @Descripciï¿½n);
 
-        SELECT Id_cargo, Nombre_cargo, Descripción
+        SELECT Id_cargo, Nombre_cargo, Descripciï¿½n
         FROM Administracion.Cargos
         WHERE Id_cargo = SCOPE_IDENTITY();
     END TRY
@@ -721,15 +738,15 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50051, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50051, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50052, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50052, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
 
         -- Retrieve paginated cargos
         SELECT 
             Id_cargo,
             Nombre_cargo,
-            Descripción
+            Descripciï¿½n
         FROM Administracion.Cargos
         WHERE (@TextFilter IS NULL OR Nombre_cargo LIKE '%' + @TextFilter + '%')
         ORDER BY Id_cargo ASC
@@ -797,9 +814,9 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50054, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50054, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50055, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50055, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
 
         -- Retrieve paginated roles
         SELECT 
@@ -833,15 +850,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-        -- Validar parámetros de paginación
+        -- Validar parï¿½metros de paginaciï¿½n
         IF @PageNumber < 1
-            THROW 50060, 'El número de página debe ser mayor o igual a 1.', 1;
+            THROW 50060, 'El nï¿½mero de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50061, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+            THROW 50061, 'El tamaï¿½o de pï¿½gina debe ser mayor o igual a 1.', 1;
         IF @Id_utileria IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Inventario.Utileria WHERE Id_utileria = @Id_utileria)
-            THROW 50062, 'La utilería especificada no existe.', 1;
+            THROW 50062, 'La utilerï¿½a especificada no existe.', 1;
 
-        -- Obtener utilerías paginadas
+        -- Obtener utilerï¿½as paginadas
         SELECT 
             u.Id_utileria,
             u.Nombre,
@@ -869,7 +886,8 @@ GO
 CREATE OR ALTER PROCEDURE Inventario.AddUtileria
 (
     @Nombre VARCHAR(100),
-    @Cantidad INT
+    @Cantidad INT,
+    @ServicioIds NVARCHAR(MAX) = NULL -- Nuevo parÃ¡metro opcional
 )
 AS
 BEGIN
@@ -879,15 +897,26 @@ BEGIN
 
         -- Validar entradas
         IF @Nombre IS NULL OR LTRIM(RTRIM(@Nombre)) = ''
-            THROW 50063, 'El nombre de la utilería es requerido.', 1;
+            THROW 50063, 'El nombre de la utilerÃ­a es requerido.', 1;
         IF EXISTS (SELECT 1 FROM Inventario.Utileria WHERE Nombre = @Nombre)
-            THROW 50064, 'El nombre de la utilería ya está registrado.', 1;
+            THROW 50064, 'El nombre de la utilerÃ­a ya estÃ¡ registrado.', 1;
         IF @Cantidad < 0
             THROW 50065, 'La cantidad debe ser mayor o igual a 0.', 1;
 
-        -- Insertar utilería
+        -- Insertar utilerÃ­a
         INSERT INTO Inventario.Utileria (Nombre, Cantidad)
         VALUES (@Nombre, @Cantidad);
+
+        DECLARE @Id_utileria INT = SCOPE_IDENTITY();
+
+        -- Insertar relaciones con servicios si se proporcionan
+        IF @ServicioIds IS NOT NULL AND LTRIM(RTRIM(@ServicioIds)) != ''
+        BEGIN
+            INSERT INTO Inventario.Servicio_Utileria (Id_servicio, Id_utileria)
+            SELECT CAST(value AS INT), @Id_utileria
+            FROM STRING_SPLIT(@ServicioIds, ',')
+            WHERE EXISTS (SELECT 1 FROM Operaciones.Servicios WHERE Id_servicio = CAST(value AS INT));
+        END
 
         -- Devolver el registro insertado
         SELECT 
@@ -895,7 +924,7 @@ BEGIN
             Nombre,
             Cantidad
         FROM Inventario.Utileria
-        WHERE Id_utileria = SCOPE_IDENTITY();
+        WHERE Id_utileria = @Id_utileria;
 
         COMMIT TRANSACTION;
     END TRY
@@ -953,8 +982,8 @@ GO
 -- Updates -----------------------------------------------------------------------------------------
 
 
-USE ShowtimeDB;
-GO
+--USE ShowtimeDB;
+--GO
 
 -- Update Cliente
 CREATE OR ALTER PROCEDURE Operaciones.UpdateCliente
@@ -979,17 +1008,17 @@ BEGIN
         IF @Apellido IS NULL OR LTRIM(RTRIM(@Apellido)) = ''
             THROW 50002, 'El apellido del cliente es requerido.', 1;
         IF @Telefono IS NULL OR LTRIM(RTRIM(@Telefono)) = ''
-            THROW 50003, 'El teléfono del cliente es requerido.', 1;
+            THROW 50003, 'El telï¿½fono del cliente es requerido.', 1;
         IF @Correo_electronico IS NOT NULL AND EXISTS (
             SELECT 1 FROM Operaciones.Clientes 
             WHERE Correo_electronico = @Correo_electronico AND Id_cliente != @Id_cliente
         )
-            THROW 50004, 'El correo electrónico ya está registrado.', 1;
+            THROW 50004, 'El correo electrï¿½nico ya estï¿½ registrado.', 1;
         IF EXISTS (SELECT 1 FROM Operaciones.Clientes WHERE Telefono = @Telefono AND Id_cliente != @Id_cliente)
-            THROW 50005, 'El teléfono ya está registrado.', 1;
+            THROW 50005, 'El telï¿½fono ya estï¿½ registrado.', 1;
         IF @Correo_electronico IS NOT NULL AND 
            @Correo_electronico NOT LIKE '_%@_%._%'
-            THROW 50006, 'El formato del correo electrónico no es válido.', 1;
+            THROW 50006, 'El formato del correo electrï¿½nico no es vï¿½lido.', 1;
 
         -- Update client
         UPDATE Operaciones.Clientes
@@ -1122,15 +1151,15 @@ BEGIN
         IF @Fecha_inicio <= @Fecha_reserva OR @Hora_fin <= @Hora_inicio
             THROW 50017, 'La fecha de inicio debe ser posterior a la reserva y la hora de fin posterior a la de inicio.', 1;
         IF @Ubicacion IS NULL OR LTRIM(RTRIM(@Ubicacion)) = ''
-            THROW 50018, 'La ubicación es requerida.', 1;
+            THROW 50018, 'La ubicaciï¿½n es requerida.', 1;
         IF @Direccion IS NULL OR LTRIM(RTRIM(@Direccion)) = ''
-            THROW 50019, 'La dirección es requerida.', 1;
+            THROW 50019, 'La direcciï¿½n es requerida.', 1;
         IF @Cantidad_de_asistentes <= 0
             THROW 50020, 'La cantidad de asistentes debe ser mayor a 0.', 1;
         IF @Costo_total <= 0
             THROW 50021, 'El costo total debe ser mayor a 0.', 1;
         IF @Estado NOT IN ('Pendiente', 'Reservado', 'Finalizado', 'Cancelado', 'Incompleto')
-            THROW 50022, 'Estado inválido.', 1;
+            THROW 50022, 'Estado invï¿½lido.', 1;
 
         -- Update event
         UPDATE Operaciones.Eventos
@@ -1266,7 +1295,7 @@ BEGIN
         IF @Fecha_pago IS NULL
             THROW 50032, 'La fecha de pago es requerida.', 1;
         IF @Metodo_pago IS NULL OR LTRIM(RTRIM(@Metodo_pago)) = ''
-            THROW 50033, 'El método de pago es requerido.', 1;
+            THROW 50033, 'El mï¿½todo de pago es requerido.', 1;
 
         -- Validate payment against event cost
         DECLARE @Costo_total DECIMAL(18, 2);
@@ -1322,7 +1351,7 @@ CREATE OR ALTER PROCEDURE Administracion.UpdateEmpleado
     @Email VARCHAR(100),
     @Estado_Empleado INT,
     @Nombre_usuario VARCHAR(50),
-    @Contraseña NVARCHAR(100) = NULL,
+    @Contraseï¿½a NVARCHAR(100) = NULL,
     @Id_Cargo INT
 )
 AS
@@ -1339,19 +1368,19 @@ BEGIN
         IF @Apellido IS NULL OR LTRIM(RTRIM(@Apellido)) = ''
             THROW 50038, 'El apellido del empleado es requerido.', 1;
         IF @Telefono IS NULL OR LTRIM(RTRIM(@Telefono)) = ''
-            THROW 50039, 'El teléfono del empleado es requerido.', 1;
+            THROW 50039, 'El telï¿½fono del empleado es requerido.', 1;
         IF @Email IS NULL OR LTRIM(RTRIM(@Email)) = ''
             THROW 50040, 'El email del empleado es requerido.', 1;
         IF EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Email = @Email AND Id_empleado != @Id_empleado)
-            THROW 50041, 'El email ya está registrado.', 1;
+            THROW 50041, 'El email ya estï¿½ registrado.', 1;
         IF EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Telefono = @Telefono AND Id_empleado != @Id_empleado)
-            THROW 50042, 'El teléfono ya está registrado.', 1;
+            THROW 50042, 'El telï¿½fono ya estï¿½ registrado.', 1;
         IF NOT EXISTS (SELECT 1 FROM Administracion.Estado_Empleado WHERE Id_estado = @Estado_Empleado)
             THROW 50043, 'El estado del empleado no existe.', 1;
         IF @Nombre_usuario IS NULL OR LTRIM(RTRIM(@Nombre_usuario)) = ''
             THROW 50044, 'El nombre de usuario es requerido.', 1;
         IF EXISTS (SELECT 1 FROM Administracion.Usuarios WHERE Nombre_usuario = @Nombre_usuario AND Id_empleado != @Id_empleado)
-            THROW 50045, 'El nombre de usuario ya está registrado.', 1;
+            THROW 50045, 'El nombre de usuario ya estï¿½ registrado.', 1;
         IF NOT EXISTS (SELECT 1 FROM Administracion.Cargos WHERE Id_cargo = @Id_Cargo)
             THROW 50047, 'El cargo especificado no existe.', 1;
 
@@ -1365,14 +1394,14 @@ BEGIN
         WHERE Id_empleado = @Id_empleado;
 
         -- Update user
-        IF @Contraseña IS NOT NULL AND LTRIM(RTRIM(@Contraseña)) != ''
+        IF @Contraseï¿½a IS NOT NULL AND LTRIM(RTRIM(@Contraseï¿½a)) != ''
         BEGIN
             DECLARE @UniqueHash NVARCHAR(36) = NEWID();
-            DECLARE @HashedPassword VARBINARY(32) = HASHBYTES('SHA2_256', @Contraseña + @UniqueHash);
+            DECLARE @HashedPassword VARBINARY(32) = HASHBYTES('SHA2_256', @Contraseï¿½a + @UniqueHash);
 
             UPDATE Administracion.Usuarios
             SET Nombre_usuario = @Nombre_usuario,
-                Contraseña = @HashedPassword,
+                Contraseï¿½a = @HashedPassword,
                 UniqueHash = @UniqueHash,
                 Id_Cargo = @Id_Cargo
             WHERE Id_empleado = @Id_empleado;
@@ -1417,7 +1446,7 @@ CREATE OR ALTER PROCEDURE Administracion.UpdateCargo
 (
     @Id_cargo INT,
     @Nombre_cargo VARCHAR(100),
-    @Descripción VARCHAR(MAX) = NULL
+    @Descripciï¿½n VARCHAR(MAX) = NULL
 )
 AS
 BEGIN
@@ -1432,11 +1461,11 @@ BEGIN
         -- Update cargo
         UPDATE Administracion.Cargos
         SET Nombre_cargo = @Nombre_cargo,
-            Descripción = @Descripción
+            Descripciï¿½n = @Descripciï¿½n
         WHERE Id_cargo = @Id_cargo;
 
         -- Return updated cargo
-        SELECT Id_cargo, Nombre_cargo, Descripción
+        SELECT Id_cargo, Nombre_cargo, Descripciï¿½n
         FROM Administracion.Cargos
         WHERE Id_cargo = @Id_cargo;
     END TRY
@@ -1491,7 +1520,8 @@ CREATE OR ALTER PROCEDURE Inventario.UpdateUtileria
 (
     @Id_utileria INT,
     @Nombre VARCHAR(100),
-    @Cantidad INT
+    @Cantidad INT,
+    @ServicioIds NVARCHAR(MAX) = NULL -- Nuevo parÃ¡metro
 )
 AS
 BEGIN
@@ -1499,23 +1529,35 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        -- Validate inputs
+        -- Validaciones existentes
         IF NOT EXISTS (SELECT 1 FROM Inventario.Utileria WHERE Id_utileria = @Id_utileria)
-            THROW 50074, 'La utilería especificada no existe.', 1;
+            THROW 50074, 'La utilerÃ­a especificada no existe.', 1;
         IF @Nombre IS NULL OR LTRIM(RTRIM(@Nombre)) = ''
-            THROW 50063, 'El nombre de la utilería es requerido.', 1;
+            THROW 50063, 'El nombre de la utilerÃ­a es requerido.', 1;
         IF EXISTS (SELECT 1 FROM Inventario.Utileria WHERE Nombre = @Nombre AND Id_utileria != @Id_utileria)
-            THROW 50064, 'El nombre de la utilería ya está registrado.', 1;
+            THROW 50064, 'El nombre de la utilerÃ­a ya estÃ¡ registrado.', 1;
         IF @Cantidad < 0
             THROW 50065, 'La cantidad debe ser mayor o igual a 0.', 1;
 
-        -- Update utileria
+        -- Actualizar utilerÃ­a
         UPDATE Inventario.Utileria
         SET Nombre = @Nombre,
             Cantidad = @Cantidad
         WHERE Id_utileria = @Id_utileria;
 
-        -- Return updated utileria
+        -- Eliminar relaciones actuales
+        DELETE FROM Inventario.Servicio_Utileria WHERE Id_utileria = @Id_utileria;
+
+        -- Insertar nuevas relaciones si se proporcionan
+        IF @ServicioIds IS NOT NULL AND LTRIM(RTRIM(@ServicioIds)) != ''
+        BEGIN
+            INSERT INTO Inventario.Servicio_Utileria (Id_servicio, Id_utileria)
+            SELECT CAST(value AS INT), @Id_utileria
+            FROM STRING_SPLIT(@ServicioIds, ',')
+            WHERE EXISTS (SELECT 1 FROM Operaciones.Servicios WHERE Id_servicio = CAST(value AS INT));
+        END
+
+        -- Devolver utilerÃ­a actualizada
         SELECT Id_utileria, Nombre, Cantidad
         FROM Inventario.Utileria
         WHERE Id_utileria = @Id_utileria;
@@ -1534,8 +1576,8 @@ END;
 GO
 ----------GetById
 
-USE ShowtimeDB;
-GO
+--USE ShowtimeDB;
+--GO
 
 -- Get Cliente by Id
 CREATE OR ALTER PROCEDURE Operaciones.GetClienteById
@@ -1768,7 +1810,7 @@ BEGIN
         SELECT 
             Id_cargo,
             Nombre_cargo,
-            Descripción
+            Descripciï¿½n
         FROM Administracion.Cargos
         WHERE Id_cargo = @Id_cargo;
     END TRY
@@ -1822,7 +1864,7 @@ BEGIN
     BEGIN TRY
         -- Validate input
         IF @Id_utileria IS NULL OR NOT EXISTS (SELECT 1 FROM Inventario.Utileria WHERE Id_utileria = @Id_utileria)
-            THROW 50083, 'La utilería especificada no existe.', 1;
+            THROW 50083, 'La utilerï¿½a especificada no existe.', 1;
 
         -- Retrieve utileria by ID
         SELECT 

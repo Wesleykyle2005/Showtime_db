@@ -1,5 +1,5 @@
-USE ShowtimeDB;
-GO
+--USE ShowtimeDB;
+--GO
 
 -- Bloque para crear los esquemas con manejo de errores
 BEGIN TRY

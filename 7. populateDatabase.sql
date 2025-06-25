@@ -1,4 +1,4 @@
-USE ShowtimeDB;
+--USE ShowtimeDB;
 GO
 
 -- Reordered DELETE statements to respect foreign key constraints
