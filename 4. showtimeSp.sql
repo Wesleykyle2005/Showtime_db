@@ -159,22 +159,33 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50011, 'El n�mero de p�gina debe ser mayor o igual a 1.', 1;
+            THROW 50011, 'El número de página debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50012, 'El tama�o de p�gina debe ser mayor o igual a 1.', 1;
+            THROW 50012, 'El tamaño de página debe ser mayor o igual a 1.', 1;
 
-        -- Retrieve paginated packages
+        -- Retrieve paginated packages with servicios asociados en JSON
         SELECT 
-            Id_paquete,
-            Nombre_paquete,
-            Descripcion,
-            Cantidad,
-            Disponibilidad,
-            Costo
-        FROM Operaciones.Paquetes
-        WHERE Disponibilidad = 1
-        AND (@TextFilter IS NULL OR Nombre_paquete LIKE '%' + @TextFilter + '%')
-        ORDER BY Id_paquete ASC
+            p.Id_paquete,
+            p.Nombre_paquete,
+            p.Descripcion,
+            p.Cantidad,
+            p.Disponibilidad,
+            p.Costo,
+            (
+                SELECT 
+                    s.Id_servicio,
+                    s.Nombre_servicio,
+                    s.Descripcion,
+                    s.Costo
+                FROM Operaciones.Paquete_Servicios ps
+                INNER JOIN Operaciones.Servicios s ON ps.Id_servicio = s.Id_servicio
+                WHERE ps.Id_paquete = p.Id_paquete
+                FOR JSON PATH
+            ) AS ServiciosJson
+        FROM Operaciones.Paquetes p
+        WHERE p.Disponibilidad = 1
+          AND (@TextFilter IS NULL OR p.Nombre_paquete LIKE '%' + @TextFilter + '%')
+        ORDER BY p.Id_paquete ASC
         OFFSET (@PageNumber - 1) * @PageSize ROWS
         FETCH NEXT @PageSize ROWS ONLY;
     END TRY
@@ -292,7 +303,7 @@ BEGIN
         IF @Estado IS NOT NULL AND @Estado NOT IN ('Pendiente', 'Reservado', 'Finalizado', 'Cancelado', 'Incompleto')
             THROW 50025, 'Estado inválido.', 1;
 
-        -- Traer eventos con servicios asociados como JSON
+        -- Traer eventos con servicios asociados como JSON y información de pagos
         SELECT 
             e.Id_evento,
             e.Id_paquete,
@@ -309,6 +320,9 @@ BEGIN
             e.Detalles_adicionales,
             e.Costo_total,
             e.Estado,
+            -- Información de pagos usando la función
+            pr.PagoRestante,
+            pr.PorcentajePagado,
             -- Subconsulta para traer los servicios asociados como JSON
             (
                 SELECT 
@@ -321,6 +335,7 @@ BEGIN
             ) AS ServiciosJson
         FROM Operaciones.Eventos e
         JOIN Operaciones.Clientes c ON e.Id_cliente = c.Id_cliente
+        CROSS APPLY dbo.CalcularPagoRestante(e.Id_evento) pr
         WHERE (@TextFilter IS NULL OR 
                c.Nombre LIKE '%' + @TextFilter + '%' OR 
                c.Apellido LIKE '%' + @TextFilter + '%' OR 
@@ -407,19 +422,29 @@ BEGIN
     BEGIN TRY
         -- Validate pagination parameters
         IF @PageNumber < 1
-            THROW 50028, 'El n�mero de p�gina debe ser mayor o igual a 1.', 1;
+            THROW 50028, 'El número de página debe ser mayor o igual a 1.', 1;
         IF @PageSize < 1
-            THROW 50029, 'El tama�o de p�gina debe ser mayor o igual a 1.', 1;
+            THROW 50029, 'El tamaño de página debe ser mayor o igual a 1.', 1;
 
-        -- Retrieve paginated services
+        -- Retrieve paginated services with utilerías asociadas en JSON
         SELECT 
-            Id_servicio,
-            Nombre_servicio,
-            Descripcion,
-            Costo
-        FROM Operaciones.Servicios
-        WHERE (@TextFilter IS NULL OR Nombre_servicio LIKE '%' + @TextFilter + '%')
-        ORDER BY Id_servicio ASC
+            s.Id_servicio,
+            s.Nombre_servicio,
+            s.Descripcion,
+            s.Costo,
+            (
+                SELECT 
+                    u.Id_utileria,
+                    u.Nombre,
+                    u.Cantidad
+                FROM Inventario.Servicio_Utileria su
+                INNER JOIN Inventario.Utileria u ON su.Id_utileria = u.Id_utileria
+                WHERE su.Id_servicio = s.Id_servicio
+                FOR JSON PATH
+            ) AS UtileriasJson
+        FROM Operaciones.Servicios s
+        WHERE (@TextFilter IS NULL OR s.Nombre_servicio LIKE '%' + @TextFilter + '%')
+        ORDER BY s.Id_servicio ASC
         OFFSET (@PageNumber - 1) * @PageSize ROWS
         FETCH NEXT @PageSize ROWS ONLY;
     END TRY
@@ -1046,7 +1071,6 @@ BEGIN
 END;
 GO
 
--- Update Paquete
 CREATE OR ALTER PROCEDURE Operaciones.UpdatePaquete
 (
     @Id_paquete INT,
@@ -1095,10 +1119,27 @@ BEGIN
             WHERE EXISTS (SELECT 1 FROM Operaciones.Servicios WHERE Id_servicio = CAST(value AS INT));
         END;
 
-        -- Return updated package
-        SELECT Id_paquete, Nombre_paquete, Descripcion, Cantidad, Disponibilidad, Costo
-        FROM Operaciones.Paquetes
-        WHERE Id_paquete = @Id_paquete;
+        -- Return updated package with associated services as JSON
+        SELECT 
+            p.Id_paquete,
+            p.Nombre_paquete,
+            p.Descripcion,
+            p.Cantidad,
+            p.Disponibilidad,
+            p.Costo,
+            (
+                SELECT 
+                    s.Id_servicio,
+                    s.Nombre_servicio,
+                    s.Descripcion,
+                    s.Costo
+                FROM Operaciones.Paquete_Servicios ps
+                INNER JOIN Operaciones.Servicios s ON ps.Id_servicio = s.Id_servicio
+                WHERE ps.Id_paquete = p.Id_paquete
+                FOR JSON PATH
+            ) AS ServiciosJson
+        FROM Operaciones.Paquetes p
+        WHERE p.Id_paquete = @Id_paquete;
 
         COMMIT TRANSACTION;
     END TRY
@@ -1877,6 +1918,411 @@ BEGIN
         LEFT JOIN Operaciones.Servicios s ON su.Id_servicio = s.Id_servicio
         WHERE u.Id_utileria = @Id_utileria
         GROUP BY u.Id_utileria, u.Nombre, u.Cantidad;
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        THROW 50000, @ErrorMessage, @ErrorState;
+    END CATCH
+END;
+GO
+
+--- =============================================
+-- PROCEDIMIENTOS PARA ASIGNACIÓN DE EMPLEADOS A EVENTOS
+-- =============================================
+
+--USE ShowtimeDB;
+--GO
+CREATE OR ALTER PROCEDURE Administracion.AddAsignacionEmpleadoEvento
+(
+    @Id_evento INT,
+    @Id_empleado INT,
+    @Id_rol INT
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- Validar entradas
+        IF @Id_evento IS NULL OR NOT EXISTS (SELECT 1 FROM Operaciones.Eventos WHERE Id_evento = @Id_evento)
+            THROW 50084, 'El evento especificado no existe.', 1;
+        IF @Id_empleado IS NULL OR NOT EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Id_empleado = @Id_empleado)
+            THROW 50085, 'El empleado especificado no existe.', 1;
+        IF @Id_rol IS NULL OR NOT EXISTS (SELECT 1 FROM Administracion.Roles WHERE Id_rol = @Id_rol)
+            THROW 50086, 'El rol especificado no existe.', 1;
+
+        -- Verificar que el empleado esté disponible (Estado_Empleado = 1 o 2)
+        IF NOT EXISTS (
+            SELECT 1 FROM Administracion.Empleados 
+            WHERE Id_empleado = @Id_empleado 
+            AND Estado_Empleado IN (1, 2) -- Activo o Disponible
+        )
+            THROW 50087, 'El empleado no está disponible para asignación.', 1;
+
+        -- Verificar que no exista ya una asignación para este empleado en este evento
+        IF EXISTS (
+            SELECT 1 FROM Administracion.Rol_Empleado_Evento 
+            WHERE Id_evento = @Id_evento AND Id_empleado = @Id_empleado
+        )
+            THROW 50088, 'El empleado ya está asignado a este evento.', 1;
+
+        -- Obtener datos del evento actual
+        DECLARE @Fecha_evento DATE, @Hora_inicio TIME, @Hora_fin TIME;
+        SELECT @Fecha_evento = Fecha_inicio, @Hora_inicio = Hora_inicio, @Hora_fin = Hora_fin
+        FROM Operaciones.Eventos 
+        WHERE Id_evento = @Id_evento;
+
+        -- Validar traslape de horario en la misma fecha
+        IF EXISTS (
+            SELECT 1
+            FROM Administracion.Rol_Empleado_Evento RE
+            JOIN Operaciones.Eventos E ON RE.Id_evento = E.Id_evento
+            WHERE RE.Id_empleado = @Id_empleado
+              AND E.Fecha_inicio = @Fecha_evento
+              AND (E.Hora_inicio < @Hora_fin AND E.Hora_fin > @Hora_inicio)
+              AND RE.Id_evento != @Id_evento
+        )
+            THROW 50095, 'El empleado ya está asignado a otro evento en el mismo día y horario.', 1;
+
+        -- Insertar la asignación
+        INSERT INTO Administracion.Rol_Empleado_Evento (Id_evento, Id_empleado, Id_rol)
+        VALUES (@Id_evento, @Id_empleado, @Id_rol);
+
+        -- Actualizar el estado del empleado a "En evento" (Estado_Empleado = 3)
+        UPDATE Administracion.Empleados
+        SET Estado_Empleado = 3
+        WHERE Id_empleado = @Id_empleado;
+
+        COMMIT TRANSACTION;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        THROW 50000, @ErrorMessage, @ErrorState;
+    END CATCH
+END;
+GO
+GO
+-- Procedimiento para actualizar una asignación de empleado a evento
+CREATE OR ALTER PROCEDURE Administracion.UpdateAsignacionEmpleadoEvento
+(
+    @Id_rol_empleado_evento INT,
+    @Id_evento INT = NULL,
+    @Id_empleado INT = NULL,
+    @Id_rol INT = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- Validar que la asignación existe
+        IF NOT EXISTS (SELECT 1 FROM Administracion.Rol_Empleado_Evento WHERE Id_rol_empleado_evento = @Id_rol_empleado_evento)
+            THROW 50090, 'La asignación especificada no existe.', 1;
+
+        -- Obtener valores actuales si no se proporcionan
+        DECLARE @CurrentId_evento INT, @CurrentId_empleado INT, @CurrentId_rol INT;
+        SELECT @CurrentId_evento = Id_evento, @CurrentId_empleado = Id_empleado, @CurrentId_rol = Id_rol
+        FROM Administracion.Rol_Empleado_Evento
+        WHERE Id_rol_empleado_evento = @Id_rol_empleado_evento;
+
+        SET @Id_evento = ISNULL(@Id_evento, @CurrentId_evento);
+        SET @Id_empleado = ISNULL(@Id_empleado, @CurrentId_empleado);
+        SET @Id_rol = ISNULL(@Id_rol, @CurrentId_rol);
+
+        -- Validar entradas
+        IF NOT EXISTS (SELECT 1 FROM Operaciones.Eventos WHERE Id_evento = @Id_evento)
+            THROW 50084, 'El evento especificado no existe.', 1;
+        IF NOT EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Id_empleado = @Id_empleado)
+            THROW 50085, 'El empleado especificado no existe.', 1;
+        IF NOT EXISTS (SELECT 1 FROM Administracion.Roles WHERE Id_rol = @Id_rol)
+            THROW 50086, 'El rol especificado no existe.', 1;
+
+        -- Obtener datos del evento destino
+        DECLARE @Fecha_evento DATE, @Hora_inicio TIME, @Hora_fin TIME;
+        SELECT @Fecha_evento = Fecha_inicio, @Hora_inicio = Hora_inicio, @Hora_fin = Hora_fin
+        FROM Operaciones.Eventos 
+        WHERE Id_evento = @Id_evento;
+
+        -- Si se está cambiando el empleado o el evento, validar traslape de horario
+        IF @Id_empleado != @CurrentId_empleado OR @Id_evento != @CurrentId_evento
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM Administracion.Rol_Empleado_Evento RE
+                JOIN Operaciones.Eventos E ON RE.Id_evento = E.Id_evento
+                WHERE RE.Id_empleado = @Id_empleado
+                  AND E.Fecha_inicio = @Fecha_evento
+                  AND (E.Hora_inicio < @Hora_fin AND E.Hora_fin > @Hora_inicio)
+                  AND RE.Id_rol_empleado_evento != @Id_rol_empleado_evento
+            )
+                THROW 50095, 'El empleado ya está asignado a otro evento en el mismo día y horario.', 1;
+        END
+
+        -- Si se está cambiando el empleado, verificar disponibilidad y otras validaciones
+        IF @Id_empleado != @CurrentId_empleado
+        BEGIN
+            -- Verificar que el nuevo empleado esté disponible
+            IF NOT EXISTS (
+                SELECT 1 FROM Administracion.Empleados 
+                WHERE Id_empleado = @Id_empleado 
+                AND Estado_Empleado IN (1, 2) -- Activo o Disponible
+            )
+                THROW 50087, 'El empleado no está disponible para asignación.', 1;
+
+            -- Verificar que no exista ya una asignación para este empleado en este evento
+            IF EXISTS (
+                SELECT 1 FROM Administracion.Rol_Empleado_Evento 
+                WHERE Id_evento = @Id_evento AND Id_empleado = @Id_empleado
+                AND Id_rol_empleado_evento != @Id_rol_empleado_evento
+            )
+                THROW 50088, 'El empleado ya está asignado a este evento.', 1;
+
+            -- Restaurar el estado del empleado anterior a "Disponible" si no tiene otras asignaciones
+            IF NOT EXISTS (
+                SELECT 1 FROM Administracion.Rol_Empleado_Evento 
+                WHERE Id_empleado = @CurrentId_empleado 
+                AND Id_rol_empleado_evento != @Id_rol_empleado_evento
+            )
+            BEGIN
+                UPDATE Administracion.Empleados
+                SET Estado_Empleado = 2 -- Disponible
+                WHERE Id_empleado = @CurrentId_empleado;
+            END;
+
+            -- Actualizar el estado del nuevo empleado a "En evento"
+            UPDATE Administracion.Empleados
+            SET Estado_Empleado = 3 -- En evento
+            WHERE Id_empleado = @Id_empleado;
+        END;
+
+        -- Actualizar la asignación
+        UPDATE Administracion.Rol_Empleado_Evento
+        SET Id_evento = @Id_evento,
+            Id_empleado = @Id_empleado,
+            Id_rol = @Id_rol
+        WHERE Id_rol_empleado_evento = @Id_rol_empleado_evento;
+
+        COMMIT TRANSACTION;
+
+        -- Retornar la asignación actualizada
+        SELECT 
+            ree.Id_rol_empleado_evento,
+            ree.Id_evento,
+            ree.Id_empleado,
+            ree.Id_rol,
+            e.Fecha_inicio,
+            e.Hora_inicio,
+            e.Hora_fin,
+            e.Ubicacion,
+            emp.Nombre + ' ' + emp.Apellido AS Nombre_empleado,
+            r.Nombre_rol,
+            es.Tipo_estado
+        FROM Administracion.Rol_Empleado_Evento ree
+        JOIN Operaciones.Eventos e ON ree.Id_evento = e.Id_evento
+        JOIN Administracion.Empleados emp ON ree.Id_empleado = emp.Id_empleado
+        JOIN Administracion.Roles r ON ree.Id_rol = r.Id_rol
+        JOIN Administracion.Estado_Empleado es ON emp.Estado_Empleado = es.Id_estado
+        WHERE ree.Id_rol_empleado_evento = @Id_rol_empleado_evento;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        THROW 50000, @ErrorMessage, @ErrorState;
+    END CATCH
+END;
+GO
+
+-- Procedimiento para obtener asignaciones de empleados a eventos
+CREATE OR ALTER PROCEDURE Administracion.GetAsignacionesEmpleadoEvento
+(
+    @PageNumber INT = 1,
+    @PageSize INT = 10,
+    @Id_evento INT = NULL,
+    @Id_empleado INT = NULL,
+    @Id_rol INT = NULL,
+    @TextFilter NVARCHAR(100) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        -- Validar parámetros de paginación
+        IF @PageNumber < 1
+            THROW 50091, 'El número de página debe ser mayor o igual a 1.', 1;
+        IF @PageSize < 1
+            THROW 50092, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+
+        -- Validar filtros
+        IF @Id_evento IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Operaciones.Eventos WHERE Id_evento = @Id_evento)
+            THROW 50084, 'El evento especificado no existe.', 1;
+        IF @Id_empleado IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Administracion.Empleados WHERE Id_empleado = @Id_empleado)
+            THROW 50085, 'El empleado especificado no existe.', 1;
+        IF @Id_rol IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Administracion.Roles WHERE Id_rol = @Id_rol)
+            THROW 50086, 'El rol especificado no existe.', 1;
+
+        -- Obtener asignaciones con información detallada
+        SELECT 
+            ree.Id_rol_empleado_evento,
+            ree.Id_evento,
+            ree.Id_empleado,
+            ree.Id_rol,
+            e.Fecha_inicio,
+            e.Hora_inicio,
+            e.Hora_fin,
+            e.Ubicacion,
+            e.Estado AS Estado_evento,
+            emp.Nombre + ' ' + emp.Apellido AS Nombre_empleado,
+            emp.Telefono AS Telefono_empleado,
+            emp.Email AS Email_empleado,
+            r.Nombre_rol,
+            es.Tipo_estado AS Estado_empleado,
+            c.Nombre_cargo AS Cargo_empleado
+        FROM Administracion.Rol_Empleado_Evento ree
+        JOIN Operaciones.Eventos e ON ree.Id_evento = e.Id_evento
+        JOIN Administracion.Empleados emp ON ree.Id_empleado = emp.Id_empleado
+        JOIN Administracion.Roles r ON ree.Id_rol = r.Id_rol
+        JOIN Administracion.Estado_Empleado es ON emp.Estado_Empleado = es.Id_estado
+        LEFT JOIN Administracion.Usuarios u ON emp.Id_empleado = u.Id_empleado
+        LEFT JOIN Administracion.Cargos c ON u.Id_Cargo = c.Id_cargo
+        WHERE (@Id_evento IS NULL OR ree.Id_evento = @Id_evento)
+          AND (@Id_empleado IS NULL OR ree.Id_empleado = @Id_empleado)
+          AND (@Id_rol IS NULL OR ree.Id_rol = @Id_rol)
+          AND (@TextFilter IS NULL OR 
+               emp.Nombre LIKE '%' + @TextFilter + '%' OR 
+               emp.Apellido LIKE '%' + @TextFilter + '%' OR
+               r.Nombre_rol LIKE '%' + @TextFilter + '%' OR
+               e.Ubicacion LIKE '%' + @TextFilter + '%')
+        ORDER BY e.Fecha_inicio DESC, e.Hora_inicio ASC
+        OFFSET (@PageNumber - 1) * @PageSize ROWS
+        FETCH NEXT @PageSize ROWS ONLY;
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        THROW 50000, @ErrorMessage, @ErrorState;
+    END CATCH
+END;
+GO
+
+-- Procedimiento para eliminar una asignación de empleado a evento
+CREATE OR ALTER PROCEDURE Administracion.DeleteAsignacionEmpleadoEvento
+(
+    @Id_rol_empleado_evento INT
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- Validar que la asignación existe
+        IF NOT EXISTS (SELECT 1 FROM Administracion.Rol_Empleado_Evento WHERE Id_rol_empleado_evento = @Id_rol_empleado_evento)
+            THROW 50090, 'La asignación especificada no existe.', 1;
+
+        -- Obtener información del empleado antes de eliminar
+        DECLARE @Id_empleado INT;
+        SELECT @Id_empleado = Id_empleado
+        FROM Administracion.Rol_Empleado_Evento
+        WHERE Id_rol_empleado_evento = @Id_rol_empleado_evento;
+
+        -- Eliminar la asignación
+        DELETE FROM Administracion.Rol_Empleado_Evento
+        WHERE Id_rol_empleado_evento = @Id_rol_empleado_evento;
+
+        -- Verificar si el empleado tiene otras asignaciones
+        IF NOT EXISTS (
+            SELECT 1 FROM Administracion.Rol_Empleado_Evento 
+            WHERE Id_empleado = @Id_empleado
+        )
+        BEGIN
+            -- Si no tiene otras asignaciones, cambiar su estado a "Disponible"
+            UPDATE Administracion.Empleados
+            SET Estado_Empleado = 2 -- Disponible
+            WHERE Id_empleado = @Id_empleado;
+        END;
+
+        COMMIT TRANSACTION;
+
+        -- Retornar confirmación
+        SELECT 'Asignación eliminada exitosamente' AS Mensaje;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        THROW 50000, @ErrorMessage, @ErrorState;
+    END CATCH
+END;
+GO
+
+-- Procedimiento para obtener empleados disponibles para asignar a eventos
+CREATE OR ALTER PROCEDURE Administracion.GetEmpleadosDisponibles
+(
+    @Fecha_evento DATE,
+    @Id_evento INT = NULL, -- Para excluir empleados ya asignados a este evento
+    @PageNumber INT = 1,
+    @PageSize INT = 10,
+    @TextFilter NVARCHAR(100) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        -- Validar parámetros de paginación
+        IF @PageNumber < 1
+            THROW 50091, 'El número de página debe ser mayor o igual a 1.', 1;
+        IF @PageSize < 1
+            THROW 50092, 'El tamaño de página debe ser mayor o igual a 1.', 1;
+
+        -- Obtener empleados disponibles (no asignados a eventos en la fecha especificada)
+        SELECT 
+            e.Id_empleado,
+            e.Nombre,
+            e.Apellido,
+            e.Telefono,
+            e.Email,
+            es.Tipo_estado,
+            c.Nombre_cargo,
+            u.Nombre_usuario
+        FROM Administracion.Empleados e
+        JOIN Administracion.Estado_Empleado es ON e.Estado_Empleado = es.Id_estado
+        LEFT JOIN Administracion.Usuarios u ON e.Id_empleado = u.Id_empleado
+        LEFT JOIN Administracion.Cargos c ON u.Id_Cargo = c.Id_cargo
+        WHERE e.Estado_Empleado IN (1, 2) -- Activo o Disponible
+          AND e.Id_empleado NOT IN (
+              -- Excluir empleados ya asignados a eventos en la fecha especificada
+              SELECT DISTINCT ree.Id_empleado
+              FROM Administracion.Rol_Empleado_Evento ree
+              JOIN Operaciones.Eventos ev ON ree.Id_evento = ev.Id_evento
+              WHERE ev.Fecha_inicio = @Fecha_evento
+                AND (@Id_evento IS NULL OR ree.Id_evento != @Id_evento)
+          )
+          AND (@TextFilter IS NULL OR 
+               e.Nombre LIKE '%' + @TextFilter + '%' OR 
+               e.Apellido LIKE '%' + @TextFilter + '%' OR
+               c.Nombre_cargo LIKE '%' + @TextFilter + '%')
+        ORDER BY e.Nombre, e.Apellido
+        OFFSET (@PageNumber - 1) * @PageSize ROWS
+        FETCH NEXT @PageSize ROWS ONLY;
+
     END TRY
     BEGIN CATCH
         DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
